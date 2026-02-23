@@ -38,3 +38,5 @@ jobs:
               "sudo unzip -o /tmp/site.zip -d /opt/arssyi-site",
               "sudo /usr/local/bin/deploy_static.sh"
             ]'
+            
+<p>배포 테스트: 2026-02-23</p>
