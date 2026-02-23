@@ -25,18 +25,26 @@ jobs:
         run: |
           aws s3 cp site.zip s3://${{ secrets.DEPLOY_BUCKET }}/site/latest.zip
 
-      - name: Deploy on EC2 via SSM (targets by tag)
+      - name: Deploy on EC2 via SSM (resolve instance ids by tag)
+        shell: bash
         run: |
+          set -euo pipefail
+
+          echo "Finding instances by tag..."
+          IDS=$(aws ec2 describe-instances \
+            --filters "Name=tag:arssyi-role,Values=web" "Name=instance-state-name,Values=running" \
+            --query "Reservations[].Instances[].InstanceId" \
+            --output text)
+
+          if [ -z "$IDS" ] || [ "$IDS" = "None" ]; then
+            echo "❌ 태그로 실행 중 인스턴스를 못 찾았어. EC2 인스턴스에 arssyi-role=web 태그가 진짜 붙어있는지 확인해줘."
+            exit 1
+          fi
+
+          echo "Target instance ids: $IDS"
+
           aws ssm send-command \
-            --targets "Key=tag:arssyi-role,Values=web" \
+            --instance-ids $IDS \
             --document-name "AWS-RunShellScript" \
             --comment "Deploy arssyi static site" \
-            --parameters 'commands=[
-              "set -e",
-              "aws s3 cp s3://${{ secrets.DEPLOY_BUCKET }}/site/latest.zip /tmp/site.zip",
-              "sudo rm -rf /opt/arssyi-site/*",
-              "sudo unzip -o /tmp/site.zip -d /opt/arssyi-site",
-              "sudo /usr/local/bin/deploy_static.sh"
-            ]'
-
-            <p>배포 테스트: 2026-02-23</p>
+            --parameters 'commands=["set -e","aws s3 cp s3://${{ secrets.DEPLOY_BUCKET }}/site/latest.zip /tmp/site.zip","sudo rm -rf /opt/arssyi-site/*","sudo unzip -o /tmp/site.zip -d /opt/arssyi-site","sudo /usr/local/bin/deploy_static.sh"]'
