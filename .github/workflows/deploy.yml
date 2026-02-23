@@ -1,0 +1,40 @@
+name: Deploy static site to arssyi
+
+on:
+  push:
+    branches: [ "main" ]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Zip site
+        run: |
+          zip -r site.zip . -x ".git/*" ".github/*"
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Upload to S3
+        run: |
+          aws s3 cp site.zip s3://${{ secrets.DEPLOY_BUCKET }}/site/latest.zip
+
+      - name: Deploy on EC2 via SSM (targets by tag)
+        run: |
+          aws ssm send-command \
+            --targets "Key=tag:arssyi-role,Values=web" \
+            --document-name "AWS-RunShellScript" \
+            --comment "Deploy arssyi static site" \
+            --parameters 'commands=[
+              "set -e",
+              "aws s3 cp s3://${{ secrets.DEPLOY_BUCKET }}/site/latest.zip /tmp/site.zip",
+              "sudo rm -rf /opt/arssyi-site/*",
+              "sudo unzip -o /tmp/site.zip -d /opt/arssyi-site",
+              "sudo /usr/local/bin/deploy_static.sh"
+            ]'
